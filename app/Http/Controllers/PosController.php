@@ -159,4 +159,10 @@ class PosController extends Controller
             return redirect()->route('pos.index')->with('transaction', $transaction->load('transactionItems.transactionItemDetails'));
         });
     }
+
+    public function receipt(Request $request, Transaction $transaction)
+    {
+        $transaction->load(['transactionItems.transactionItemDetails', 'branch', 'user']);
+        return view('pos.receipt', compact('transaction'));
+    }
 }

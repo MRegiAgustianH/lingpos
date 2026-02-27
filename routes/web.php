@@ -42,6 +42,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('role:admin,kasir')->group(function () {
             Route::get('pos', [PosController::class , 'index'])->name('pos.index');
             Route::post('pos/checkout', [PosController::class , 'checkout'])->name('pos.checkout');
+            Route::get('pos/receipt/{transaction}', [PosController::class , 'receipt'])->name('pos.receipt');
             Route::get('transactions', [TransactionController::class , 'index'])->name('transactions.index');
             Route::get('transactions/export', [TransactionController::class , 'export'])->name('transactions.export');
             Route::get('transactions/{transaction}', [TransactionController::class , 'show'])->name('transactions.show');

@@ -98,6 +98,7 @@ export default function PosPage({
     const [cartOpen, setCartOpen] = useState(false);
     const [processing, setProcessing] = useState(false);
     const [successTrx, setSuccessTrx] = useState<{
+        id?: number;
         invoice_number: string;
         total: number;
         change: number;
@@ -272,9 +273,13 @@ export default function PosPage({
                 amount_paid: Number(amountPaid),
             } as any,
             {
-                onSuccess: () => {
+                onSuccess: (page) => {
+                    const flash = page.props.flash as any;
+                    const trx = flash?.transaction;
+
                     setSuccessTrx({
-                        invoice_number: 'Generated',
+                        id: trx?.id,
+                        invoice_number: trx?.invoice_number || 'Generated',
                         total,
                         change,
                     });
@@ -1048,12 +1053,25 @@ export default function PosPage({
                                 </p>
                             )}
                         </div>
-                        <Button
-                            onClick={() => setSuccessTrx(null)}
-                            className="h-12 w-full rounded-xl bg-zinc-900 font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                        >
-                            Transkasi Baru
-                        </Button>
+                        <div className="flex w-full gap-3">
+                            <Button
+                                onClick={() => {
+                                    if (successTrx?.id) {
+                                        window.open(`/pos/receipt/${successTrx.id}`, '_blank');
+                                    }
+                                }}
+                                variant="outline"
+                                className="h-12 flex-1 rounded-xl border-zinc-300 font-semibold dark:border-zinc-700"
+                            >
+                                Cetak Struk
+                            </Button>
+                            <Button
+                                onClick={() => setSuccessTrx(null)}
+                                className="h-12 flex-1 rounded-xl bg-zinc-900 font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                            >
+                                Transaksi Baru
+                            </Button>
+                        </div>
                     </DialogContent>
                 </Dialog>
             </div>

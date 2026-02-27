@@ -60,10 +60,10 @@ export default function Login({ status }: Props) {
                             </span>
                         </div>
                         <h2 className="mb-2 text-3xl font-bold tracking-tight text-slate-900 dark:text-stone-100">
-                            POS Portal
+                            POSLING
                         </h2>
                         <p className="text-sm font-medium text-slate-500 dark:text-stone-400">
-                            Log in to manage your sales
+                            Log in untuk kelola penjualan
                         </p>
                     </div>
 
@@ -117,12 +117,6 @@ export default function Login({ status }: Props) {
                                     >
                                         Password
                                     </label>
-                                    <a
-                                        className="text-xs font-semibold text-slate-500 transition-colors hover:text-[#334155] dark:text-stone-400 dark:hover:text-stone-200"
-                                        href="#"
-                                    >
-                                        Forgot?
-                                    </a>
                                 </div>
                                 <div className="group relative flex items-center">
                                     <span className="absolute left-0 pl-3 text-slate-400 transition-colors group-focus-within:text-[#334155]">
