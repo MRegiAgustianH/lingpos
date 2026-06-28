@@ -58,10 +58,10 @@ export default function SessionPage({ session, is_open, products, packUnitId, br
     const [branchId, setBranchId] = useState('');
     const [actualEndingCash, setActualEndingCash] = useState('');
     const [packsInput, setPacksInput] = useState<Record<number, string>>(
-        products.reduce((acc, p) => ({ ...acc, [p.id]: '0' }), {})
+        products.reduce((acc, p) => ({ ...acc, [p.id]: '' }), {})
     );
     const [pcsInput, setPcsInput] = useState<Record<number, string>>(
-        products.reduce((acc, p) => ({ ...acc, [p.id]: '0' }), {})
+        products.reduce((acc, p) => ({ ...acc, [p.id]: '' }), {})
     );
     const [processing, setProcessing] = useState(false);
 
@@ -270,8 +270,9 @@ export default function SessionPage({ session, is_open, products, packUnitId, br
                                                 <Input
                                                     type="number"
                                                     min="0"
-                                                    value={packsInput[p.id] || '0'}
+                                                    value={packsInput[p.id] ?? ''}
                                                     onChange={(e) => handlePackChange(p.id, e.target.value)}
+                                                    placeholder="0"
                                                     className="w-24 text-center font-bold"
                                                 />
                                                 <span className="text-sm font-medium text-zinc-500 w-12">{unitLabel}</span>
@@ -383,8 +384,9 @@ export default function SessionPage({ session, is_open, products, packUnitId, br
                                                         <Input
                                                             type="number"
                                                             min="0"
-                                                            value={packsInput[sp.product_id] || '0'}
+                                                            value={packsInput[sp.product_id] ?? ''}
                                                             onChange={(e) => handlePackChange(sp.product_id, e.target.value)}
+                                                            placeholder="0"
                                                             className="w-16 text-center font-bold"
                                                         />
                                                         <span className="text-xs font-medium text-zinc-500">{unitLabel}</span>
@@ -396,8 +398,9 @@ export default function SessionPage({ session, is_open, products, packUnitId, br
                                                             <Input
                                                                 type="number"
                                                                 min="0"
-                                                                value={pcsInput[sp.product_id] || '0'}
+                                                                value={pcsInput[sp.product_id] ?? ''}
                                                                 onChange={(e) => handlePcsChange(sp.product_id, e.target.value)}
+                                                                placeholder="0"
                                                                 className="w-16 text-center font-bold"
                                                             />
                                                             <span className="text-xs font-medium text-zinc-500">{baseUnitName}</span>
