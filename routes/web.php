@@ -10,6 +10,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\CashierSessionController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -35,6 +36,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::resource('cash-flows', \App\Http\Controllers\CashFlowController::class)->only(['index', 'store', 'destroy']);
             Route::get('inventory', [InventoryController::class , 'index'])->name('inventory.index');
             Route::post('inventory/adjust', [InventoryController::class , 'adjust'])->name('inventory.adjust');
+            Route::get('admin/shifts', [CashierSessionController::class, 'indexAdmin'])->name('admin.shifts');
         }
         );
 
@@ -46,8 +48,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('transactions', [TransactionController::class , 'index'])->name('transactions.index');
             Route::get('transactions/export', [TransactionController::class , 'export'])->name('transactions.export');
             Route::get('transactions/{transaction}', [TransactionController::class , 'show'])->name('transactions.show');
-            Route::get('daily-restock', [InventoryController::class , 'dailyRestock'])->name('inventory.daily-restock');
-            Route::post('daily-restock', [InventoryController::class , 'storeDailyRestock'])->name('inventory.store-daily-restock');
+            
+            // Cashier Sessions
+            Route::get('cashier/session', [CashierSessionController::class, 'show'])->name('cashier.session');
+            Route::post('cashier/session/open', [CashierSessionController::class, 'open'])->name('cashier.session.open');
+            Route::post('cashier/session/close', [CashierSessionController::class, 'close'])->name('cashier.session.close');
         }
         );
     });

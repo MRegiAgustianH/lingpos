@@ -14,6 +14,10 @@ class Transaction extends Model
         'user_id',
         'total',
         'payment_method',
+        'jenis_order',
+        'waktu_order',
+        'waktu_bayar',
+        'cashier_session_id',
         'amount_paid',
         'change',
     ];
@@ -40,5 +44,10 @@ class Transaction extends Model
     public function transactionItems(): HasMany
     {
         return $this->hasMany(TransactionItem::class);
+    }
+
+    public function cashierSession(): BelongsTo
+    {
+        return $this->belongsTo(CashierSession::class);
     }
 }

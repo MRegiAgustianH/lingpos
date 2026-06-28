@@ -19,6 +19,18 @@ class PosController extends Controller
         $user = $request->user();
         $branchId = $user->branch_id;
 
+        $activeSession = null;
+        if ($user->isKasir()) {
+            $activeSession = \App\Models\CashierSession::where('user_id', $user->id)
+                ->where('branch_id', $branchId)
+                ->where('status', 'open')
+                ->first();
+
+            if (!$activeSession) {
+                return redirect()->route('cashier.session')->with('error', 'Anda harus membuka sesi kasir (shift) terlebih dahulu.');
+            }
+        }
+
         $menus = Menu::with(['category', 'menuItems.product.baseUnit'])->get();
 
         // Get inventory for this branch to show stock availability
@@ -26,11 +38,16 @@ class PosController extends Controller
             ->get()
             ->keyBy('product_id');
 
+        // Fetch products with their base unit and conversion units
+        $products = \App\Models\Product::with(['baseUnit', 'productUnits.unit'])->get();
+
         return Inertia::render('pos/index', [
             'menus' => $menus,
             'categories' => Category::all(),
             'inventories' => $inventories,
             'branchId' => $branchId,
+            'activeSession' => $activeSession,
+            'products' => $products,
         ]);
     }
 
@@ -38,19 +55,38 @@ class PosController extends Controller
     {
         $validated = $request->validate([
             'items' => 'required|array|min:1',
-            'items.*.menu_id' => 'required|exists:menus,id',
+            'items.*.menu_id' => 'nullable|exists:menus,id',
+            'items.*.menu_name' => 'nullable|string',
+            'items.*.price' => 'nullable|numeric|min:0',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.details' => 'required|array|min:1',
             'items.*.details.*.product_id' => 'required|exists:products,id',
             'items.*.details.*.quantity' => 'required|integer|min:1',
             'payment_method' => 'required|in:cash,transfer',
             'amount_paid' => 'required|numeric|min:0',
+            'jenis_order' => 'required|in:dine_in,take_away,gofood,grabfood,shopeefood',
+            'waktu_order' => 'nullable',
         ]);
 
         $user = $request->user();
         $branchId = $user->branch_id;
 
-        return DB::transaction(function () use ($validated, $user, $branchId) {
+        // Check if there is an active session for kasir
+        $activeSession = null;
+        if ($user->isKasir()) {
+            $activeSession = \App\Models\CashierSession::where('user_id', $user->id)
+                ->where('branch_id', $branchId)
+                ->where('status', 'open')
+                ->first();
+
+            if (!$activeSession) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'items' => 'Sesi kasir aktif tidak ditemukan. Harap buka sesi kasir terlebih dahulu.',
+                ]);
+            }
+        }
+
+        return DB::transaction(function () use ($validated, $user, $branchId, $activeSession) {
             // Calculate total
             // Step 1: Calculate Total & Aggregate Required Ingredients
             $total = 0;
@@ -58,12 +94,22 @@ class PosController extends Controller
             $requiredProducts = [];
 
             foreach ($validated['items'] as $item) {
-                $menu = Menu::findOrFail($item['menu_id']);
-                $subtotal = $menu->price * $item['quantity'];
+                if (!empty($item['menu_id'])) {
+                    $menu = Menu::findOrFail($item['menu_id']);
+                    $itemPrice = isset($item['price']) ? (float)$item['price'] : (float)$menu->price;
+                    $itemName = $menu->name;
+                } else {
+                    $itemPrice = (float)$item['price'];
+                    $itemName = $item['menu_name'] ?? 'Dimsum Frozen';
+                }
+
+                $subtotal = $itemPrice * $item['quantity'];
                 $total += $subtotal;
 
                 $itemsData[] = [
-                    'menu' => $menu,
+                    'menu_id' => $item['menu_id'] ?? null,
+                    'menu_name' => $itemName,
+                    'price' => $itemPrice,
                     'quantity' => $item['quantity'],
                     'subtotal' => $subtotal,
                     'details' => $item['details'],
@@ -111,6 +157,10 @@ class PosController extends Controller
                 'user_id' => $user->id,
                 'total' => $total,
                 'payment_method' => $validated['payment_method'],
+                'jenis_order' => $validated['jenis_order'],
+                'waktu_order' => $validated['waktu_order'] ? \Carbon\Carbon::parse($validated['waktu_order']) : now(),
+                'waktu_bayar' => now(),
+                'cashier_session_id' => $activeSession ? $activeSession->id : null,
                 'amount_paid' => $validated['amount_paid'],
                 'change' => $change,
             ]);
@@ -118,9 +168,9 @@ class PosController extends Controller
             foreach ($itemsData as $itemData) {
                 $transactionItem = TransactionItem::create([
                     'transaction_id' => $transaction->id,
-                    'menu_id' => $itemData['menu']->id,
-                    'menu_name' => $itemData['menu']->name,
-                    'price' => $itemData['menu']->price,
+                    'menu_id' => $itemData['menu_id'],
+                    'menu_name' => $itemData['menu_name'],
+                    'price' => $itemData['price'],
                     'quantity' => $itemData['quantity'],
                     'subtotal' => $itemData['subtotal'],
                 ]);
@@ -142,6 +192,13 @@ class PosController extends Controller
                     Inventory::where('branch_id', $branchId)
                         ->where('product_id', $product->id)
                         ->decrement('stock', $totalQty);
+
+                    // Update shift product sold quantity
+                    if ($activeSession) {
+                        \App\Models\CashierSessionProduct::where('cashier_session_id', $activeSession->id)
+                            ->where('product_id', $product->id)
+                            ->increment('sold_quantity', $totalQty);
+                    }
                 }
             }
 

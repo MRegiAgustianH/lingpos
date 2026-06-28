@@ -17,6 +17,10 @@ class DashboardController extends Controller
         $user = $request->user();
         $branchId = $user->branch_id;
 
+        // Date range filters for chart
+        $startDate = $request->input('start_date', now()->subDays(7)->toDateString());
+        $endDate = $request->input('end_date', now()->toDateString());
+
         // Today's sales
         $todaySales = Transaction::when($branchId, fn($q, $v) => $q->where('branch_id', $v))
             ->whereDate('created_at', today())
@@ -34,9 +38,9 @@ class DashboardController extends Controller
         // Top menus (this week)
         $topMenus = TransactionItem::select('menu_name', DB::raw('SUM(quantity) as total_sold'))
             ->whereHas('transaction', function ($q) use ($branchId) {
-            $q->when($branchId, fn($q2, $v) => $q2->where('branch_id', $v))
-                ->where('created_at', '>=', now()->startOfWeek());
-        })
+                $q->when($branchId, fn($q2, $v) => $q2->where('branch_id', $v))
+                    ->where('created_at', '>=', now()->startOfWeek());
+            })
             ->groupBy('menu_name')
             ->orderByDesc('total_sold')
             ->limit(5)
@@ -48,16 +52,40 @@ class DashboardController extends Controller
             ->where('stock', '<', 10)
             ->get();
 
-        // Weekly sales chart data
-        $weeklySales = Transaction::select(
-            DB::raw('DATE(created_at) as date'),
-            DB::raw('SUM(total) as total')
+        // Daily hourly sales for Candlestick Chart
+        $hourlySales = Transaction::select(
+            DB::raw('DATE(created_at) as trx_date'),
+            DB::raw('HOUR(created_at) as trx_hour'),
+            DB::raw('SUM(total) as hourly_total')
         )
             ->when($branchId, fn($q, $v) => $q->where('branch_id', $v))
-            ->where('created_at', '>=', now()->subDays(7))
-            ->groupBy('date')
-            ->orderBy('date')
+            ->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate])
+            ->groupBy('trx_date', 'trx_hour')
+            ->orderBy('trx_date')
+            ->orderBy('trx_hour')
             ->get();
+
+        $candlestickSales = [];
+        $groupedByDate = $hourlySales->groupBy('trx_date');
+
+        foreach ($groupedByDate as $date => $hours) {
+            $sortedHours = $hours->sortBy('trx_hour');
+            
+            $open = $sortedHours->first()->hourly_total;
+            $close = $sortedHours->last()->hourly_total;
+            $high = $sortedHours->max('hourly_total');
+            $low = $sortedHours->min('hourly_total');
+
+            $candlestickSales[] = [
+                'x' => $date,
+                'y' => [
+                    (float) $open,
+                    (float) $high,
+                    (float) $low,
+                    (float) $close
+                ]
+            ];
+        }
 
         // Total Active Inventory Quantity
         $activeInventory = Inventory::when($branchId, fn($q, $v) => $q->where('branch_id', $v))
@@ -70,16 +98,16 @@ class DashboardController extends Controller
             ->limit(5)
             ->get()
             ->map(function ($transaction) {
-            return [
-            'id' => $transaction->id,
-            'order_id' => '#ORD-' . str_pad($transaction->id, 5, '0', STR_PAD_LEFT),
-            'customer_name' => $transaction->customer_name ?: 'Guest',
-            'date' => $transaction->created_at->format('M d, h:i A'),
-            'items_count' => $transaction->transactionItems->sum('quantity'),
-            'total' => $transaction->total,
-            'status' => 'Completed',
-            ];
-        });
+                return [
+                    'id' => $transaction->id,
+                    'order_id' => '#ORD-' . str_pad($transaction->id, 5, '0', STR_PAD_LEFT),
+                    'customer_name' => $transaction->customer_name ?: 'Guest',
+                    'date' => $transaction->created_at->format('M d, h:i A'),
+                    'items_count' => $transaction->transactionItems->sum('quantity'),
+                    'total' => $transaction->total,
+                    'status' => 'Completed',
+                ];
+            });
 
         // Monthly Net Profit Calculation
         $monthlySales = Transaction::when($branchId, fn($q, $v) => $q->where('branch_id', $v))
@@ -89,7 +117,7 @@ class DashboardController extends Controller
 
         $monthlyCashIncome = \App\Models\CashFlow::when($branchId, fn($q, $v) => $q->where('branch_id', $v))
             ->where('type', 'income')
-            ->where('category', '!=', 'penjualan_kasir') // Cegah perhitungan ganda dengan tabel transactions
+            ->where('category', '!=', 'penjualan_kasir')
             ->whereMonth('transaction_date', now()->month)
             ->whereYear('transaction_date', now()->year)
             ->sum('amount');
@@ -109,10 +137,14 @@ class DashboardController extends Controller
             'lowStockCount' => $lowStockCount,
             'topMenus' => $topMenus,
             'lowStockItems' => $lowStockItems,
-            'weeklySales' => $weeklySales,
+            'weeklySales' => $candlestickSales, // Keep same prop name to minimize changes, but contains candlestick data
             'activeInventory' => $activeInventory,
             'recentTransactions' => $recentTransactions,
             'isAdmin' => $user->isAdmin(),
+            'filters' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ]
         ]);
     }
 }

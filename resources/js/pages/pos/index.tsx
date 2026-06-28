@@ -25,17 +25,38 @@ import {
     Landmark,
     CheckCircle2,
     ArrowLeft,
+    Power,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UnitType {
     id: number;
     name: string;
+    symbol?: string;
 }
 interface Product {
     id: number;
     name: string;
+    category_id?: number;
     base_unit?: UnitType;
+}
+interface ProductUnit {
+    id: number;
+    product_id: number;
+    unit_id: number;
+    conversion_value: number;
+    selling_price?: number;
+    unit?: UnitType;
+}
+interface ProductExtended {
+    id: number;
+    name: string;
+    sku: string;
+    price: number;
+    category_id: number;
+    base_unit_id: number;
+    base_unit?: UnitType;
+    product_units?: ProductUnit[];
 }
 interface MenuItem {
     id: number;
@@ -70,6 +91,8 @@ interface CartItem {
     menu: Menu;
     quantity: number;
     details: CartDetail[];
+    custom_price?: number;
+    is_frozen?: boolean;
 }
 
 interface Props {
@@ -77,6 +100,8 @@ interface Props {
     categories: Category[];
     inventories: InventoryMap;
     branchId: number;
+    activeSession: any;
+    products?: ProductExtended[];
 }
 
 export default function PosPage({
@@ -84,6 +109,8 @@ export default function PosPage({
     categories,
     inventories,
     branchId,
+    activeSession,
+    products = [],
 }: Props) {
     const { auth } = usePage().props;
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -95,6 +122,8 @@ export default function PosPage({
     const [payOpen, setPayOpen] = useState(false);
     const [payMethod, setPayMethod] = useState<'cash' | 'transfer'>('cash');
     const [amountPaid, setAmountPaid] = useState('');
+    const [jenisOrder, setJenisOrder] = useState<'dine_in' | 'take_away' | 'gofood' | 'grabfood' | 'shopeefood'>('dine_in');
+    const [waktuOrder, setWaktuOrder] = useState<string | null>(null);
     const [cartOpen, setCartOpen] = useState(false);
     const [processing, setProcessing] = useState(false);
     const [successTrx, setSuccessTrx] = useState<{
@@ -103,6 +132,107 @@ export default function PosPage({
         total: number;
         change: number;
     } | null>(null);
+
+    // State for Frozen Sales
+    const [frozenOpen, setFrozenOpen] = useState(false);
+    const [selectedProductId, setSelectedProductId] = useState<number | ''>('');
+    const [selectedUnitId, setSelectedUnitId] = useState<number | ''>('');
+    const [frozenQty, setFrozenQty] = useState('1');
+    const [frozenPrice, setFrozenPrice] = useState('');
+
+    const addFrozenToCart = () => {
+        if (!selectedProductId) {
+            toast.error('Pilih produk terlebih dahulu.');
+            return;
+        }
+        const prod = products.find((p) => p.id === Number(selectedProductId));
+        if (!prod) return;
+
+        const qtyNum = parseInt(frozenQty, 10);
+        const priceNum = parseFloat(frozenPrice);
+
+        if (isNaN(qtyNum) || qtyNum <= 0) {
+            toast.error('Masukkan jumlah yang valid (min. 1).');
+            return;
+        }
+        if (isNaN(priceNum) || priceNum < 0) {
+            toast.error('Masukkan harga yang valid.');
+            return;
+        }
+
+        // Determine unit and conversion value
+        let conversionValue = 1;
+        let unitName = prod.base_unit?.name || 'pcs';
+
+        if (selectedUnitId && prod.product_units) {
+            const prodUnit = prod.product_units.find((pu) => pu.unit_id === Number(selectedUnitId));
+            if (prodUnit) {
+                conversionValue = prodUnit.conversion_value;
+                unitName = prodUnit.unit?.name || 'pack';
+            }
+        }
+
+        const requiredStock = qtyNum * conversionValue;
+        const availableStock = getStock(prod.id);
+
+        // Calculate current stock in cart
+        const inCartQty = cart.reduce((sum, c) => {
+            const cDetail = c.details.find((d) => d.product_id === prod.id);
+            return sum + (cDetail ? cDetail.quantity * c.quantity : 0);
+        }, 0);
+
+        if (availableStock < inCartQty + requiredStock) {
+            toast.error(`Stok ${prod.name} tidak mencukupi (Tersedia: ${availableStock - inCartQty} lagi)`);
+            return;
+        }
+
+        // Add to cart as custom item
+        const mockMenu: Menu = {
+            id: -(1000 + prod.id), // negative ID for custom items
+            name: `Frozen - ${prod.name} (${unitName})`,
+            price: priceNum,
+            category_id: prod.category_id,
+            is_flexible: false,
+            default_quantity: 1,
+        };
+
+        const details: CartDetail[] = [
+            {
+                product_id: prod.id,
+                product_name: prod.name,
+                quantity: conversionValue,
+            },
+        ];
+
+        if (!waktuOrder) {
+            setWaktuOrder(new Date().toISOString());
+        }
+
+        setCart((prev) => {
+            const existing = prev.findIndex(
+                (c) =>
+                    c.menu.id === mockMenu.id &&
+                    JSON.stringify(c.details) === JSON.stringify(details),
+            );
+            if (existing >= 0) {
+                const updated = [...prev];
+                updated[existing] = {
+                    ...updated[existing],
+                    quantity: updated[existing].quantity + qtyNum,
+                };
+                return updated;
+            }
+            return [...prev, { menu: mockMenu, quantity: qtyNum, details }];
+        });
+
+        // Reset state & close dialog
+        setFrozenOpen(false);
+        setSelectedProductId('');
+        setSelectedUnitId('');
+        setFrozenQty('1');
+        setFrozenPrice('');
+        toast.success(`Berhasil menambahkan ${prod.name} Frozen ke keranjang.`);
+    };
 
     const fmt = (val: number) =>
         new Intl.NumberFormat('id-ID', {
@@ -172,6 +302,9 @@ export default function PosPage({
     };
 
     const addItemToCart = (menu: Menu, details: CartDetail[]) => {
+        if (!waktuOrder) {
+            setWaktuOrder(new Date().toISOString());
+        }
         setCart((prev) => {
             const existing = prev.findIndex(
                 (c) =>
@@ -192,8 +325,7 @@ export default function PosPage({
 
     const confirmFlexible = () => {
         if (!selectedMenu) return;
-        const totalSelected = flexItems.reduce((s, i) => s + i.quantity, 0);
-        if (totalSelected !== selectedMenu.default_quantity) return;
+        if (flexTotal !== selectedMenu.default_quantity) return;
 
         const details = flexItems.filter((i) => i.quantity > 0);
 
@@ -265,12 +397,16 @@ export default function PosPage({
             '/pos/checkout',
             {
                 items: cart.map((c) => ({
-                    menu_id: c.menu.id,
+                    menu_id: c.menu.id < 0 ? null : c.menu.id,
+                    menu_name: c.menu.name,
+                    price: c.menu.price,
                     quantity: c.quantity,
                     details: c.details,
                 })),
                 payment_method: payMethod,
                 amount_paid: Number(amountPaid),
+                jenis_order: jenisOrder,
+                waktu_order: waktuOrder,
             } as any,
             {
                 onSuccess: (page) => {
@@ -282,33 +418,49 @@ export default function PosPage({
                         invoice_number: trx?.invoice_number || 'Generated',
                         total,
                         change,
-                    });
-                    setCart([]);
-                    setPayOpen(false);
-                    setAmountPaid('');
-                    setProcessing(false);
-                },
-                onError: () => setProcessing(false),
-            },
-        );
-    };
+                      });
+                      setCart([]);
+                      setPayOpen(false);
+                      setAmountPaid('');
+                      setJenisOrder('dine_in');
+                      setWaktuOrder(null);
+                      setProcessing(false);
+                  },
+                  onError: () => setProcessing(false),
+              },
+          );
+      };
 
     const getStock = (productId: number) =>
         (inventories as any)?.[productId]?.stock ?? 0;
 
     // Available products for flexible selection
     const allProducts = useMemo(() => {
-        const products: { id: number; name: string }[] = [];
+        const products: { id: number; name: string; category_id?: number }[] = [];
         menus.forEach((m) =>
             m.menu_items?.forEach((mi) => {
-                if (!products.find((p) => p.id === mi.product_id))
-                    products.push({ id: mi.product_id, name: mi.product.name });
-            }),
+                if (!products.find((p) => p.id === mi.product_id)) {
+                    products.push({
+                        id: mi.product_id,
+                        name: mi.product.name,
+                        category_id: mi.product.category_id,
+                    });
+                }
+            })
         );
         return products;
     }, [menus]);
 
-    const flexTotal = flexItems.reduce((s, i) => s + i.quantity, 0);
+    const flexTotal = useMemo(() => {
+        if (!selectedMenu) return 0;
+        return flexItems.reduce((s, item) => {
+            const prod = allProducts.find((p) => p.id === item.product_id);
+            if (prod && prod.category_id === selectedMenu.category_id) {
+                return s + item.quantity;
+            }
+            return s;
+        }, 0);
+    }, [flexItems, selectedMenu, allProducts]);
 
     return (
         <>
@@ -333,6 +485,15 @@ export default function PosPage({
                         </div>
                     </div>
                     <div className="flex items-center gap-6 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                        {activeSession && (
+                            <button
+                                onClick={() => router.get('/cashier/session')}
+                                className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-rose-600 hover:bg-rose-100 transition-colors dark:bg-rose-950/20 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                            >
+                                <Power className="h-4 w-4" />
+                                <span>Tutup Kasir</span>
+                            </button>
+                        )}
                         <div className="flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5 dark:bg-zinc-800/50">
                             <MapPin className="h-4 w-4 text-zinc-500" />
                             <span>{auth.user?.branch?.name ?? 'N/A'}</span>
@@ -348,16 +509,25 @@ export default function PosPage({
                     {/* Menu Grid */}
                     <div className="flex flex-1 flex-col overflow-hidden">
                         <div className="space-y-4 border-b border-zinc-200/50 bg-white p-6 dark:border-zinc-800/50 dark:bg-zinc-900">
-                            <div className="relative max-w-xl">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                    <Search className="h-4 w-4 text-zinc-400" />
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center justify-between">
+                                <div className="relative flex-1 max-w-xl">
+                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                        <Search className="h-4 w-4 text-zinc-400" />
+                                    </div>
+                                    <Input
+                                        placeholder="Cari menu berdasarkan nama..."
+                                        value={search}
+                                        onChange={(e) => setSearch(e.target.value)}
+                                        className="h-11 border-zinc-200 bg-zinc-50 pl-10 focus-visible:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50"
+                                    />
                                 </div>
-                                <Input
-                                    placeholder="Cari menu berdasarkan nama..."
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    className="h-11 border-zinc-200 bg-zinc-50 pl-10 focus-visible:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50"
-                                />
+                                <Button
+                                    onClick={() => setFrozenOpen(true)}
+                                    className="h-11 bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-2 rounded-xl px-4 text-sm font-semibold shadow-sm"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    <span>Beli Frozen (Packs)</span>
+                                </Button>
                             </div>
                             <div className="scrollbar-hide flex gap-2 overflow-x-auto pb-2">
                                 <button
@@ -714,6 +884,142 @@ export default function PosPage({
                     </DialogContent>
                 </Dialog>
 
+                {/* Beli Frozen Dialog */}
+                <Dialog open={frozenOpen} onOpenChange={setFrozenOpen}>
+                    <DialogContent className="gap-0 overflow-hidden rounded-2xl border-zinc-200 p-0 sm:max-w-md dark:border-zinc-800">
+                        <DialogHeader className="border-b border-zinc-200 bg-zinc-50 p-6 pb-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+                            <DialogTitle className="text-xl">
+                                Beli Dimsum Frozen (Pack)
+                            </DialogTitle>
+                            <DialogDescription className="mt-1 text-sm text-muted-foreground">
+                                Pilih produk dimsum raw/frozen, masukkan harga per unit secara manual sesuai kesepakatan.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 p-6">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="frozen-product">Pilih Produk</Label>
+                                <select
+                                    id="frozen-product"
+                                    value={selectedProductId}
+                                    onChange={(e) => {
+                                        const pId = e.target.value;
+                                        setSelectedProductId(pId ? Number(pId) : '');
+                                        // Auto select default unit (pack or base)
+                                        if (pId) {
+                                            const prodObj = products.find((p) => p.id === Number(pId));
+                                            if (prodObj) {
+                                                const packUnitObj = prodObj.product_units?.find((pu) => pu.unit?.name === 'pack');
+                                                if (packUnitObj) {
+                                                    setSelectedUnitId(packUnitObj.unit_id);
+                                                    setFrozenPrice(String(packUnitObj.selling_price || prodObj.price * packUnitObj.conversion_value || ''));
+                                                } else {
+                                                    setSelectedUnitId('');
+                                                    setFrozenPrice(String(prodObj.price || ''));
+                                                }
+                                            }
+                                        }
+                                    }}
+                                    className="flex h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                                >
+                                    <option value="">-- Pilih Produk --</option>
+                                    {products
+                                        .filter((p) => p.category_id === 1 || p.category_id === 3) // Category Dimsum (1) & Bahan Pendukung (3)
+                                        .map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.name} (Tersedia: {getStock(p.id)} pcs)
+                                            </option>
+                                        ))}
+                                </select>
+                            </div>
+
+                            {selectedProductId && (
+                                <>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="frozen-unit">Pilihan Satuan / Unit</Label>
+                                        <select
+                                            id="frozen-unit"
+                                            value={selectedUnitId}
+                                            onChange={(e) => {
+                                                const uId = e.target.value;
+                                                setSelectedUnitId(uId ? Number(uId) : '');
+                                                const prodObj = products.find((p) => p.id === Number(selectedProductId));
+                                                if (prodObj) {
+                                                    if (uId) {
+                                                        const prodUnit = prodObj.product_units?.find((pu) => pu.unit_id === Number(uId));
+                                                        if (prodUnit) {
+                                                            setFrozenPrice(String(prodUnit.selling_price || prodObj.price * prodUnit.conversion_value || ''));
+                                                        }
+                                                    } else {
+                                                        setFrozenPrice(String(prodObj.price || ''));
+                                                    }
+                                                }
+                                            }}
+                                            className="flex h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                                        >
+                                            {(() => {
+                                                const prodObj = products.find((p) => p.id === Number(selectedProductId));
+                                                if (!prodObj) return null;
+                                                return (
+                                                    <>
+                                                        <option value="">{prodObj.base_unit?.name || 'pcs'} (Base Unit)</option>
+                                                        {prodObj.product_units?.map((pu) => (
+                                                            <option key={pu.unit_id} value={pu.unit_id}>
+                                                                {pu.unit?.name || 'pack'} (isi {pu.conversion_value})
+                                                            </option>
+                                                        ))}
+                                                    </>
+                                                );
+                                            })()}
+                                        </select>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="frozen-qty">Jumlah (Qty)</Label>
+                                            <Input
+                                                id="frozen-qty"
+                                                type="number"
+                                                min="1"
+                                                value={frozenQty}
+                                                onChange={(e) => setFrozenQty(e.target.value)}
+                                                className="h-11"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="frozen-price">Harga Manual (IDR)</Label>
+                                            <Input
+                                                id="frozen-price"
+                                                type="number"
+                                                min="0"
+                                                value={frozenPrice}
+                                                onChange={(e) => setFrozenPrice(e.target.value)}
+                                                className="h-11 font-mono"
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex gap-3 border-t border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-900">
+                            <Button
+                                variant="outline"
+                                onClick={() => setFrozenOpen(false)}
+                                className="h-11 flex-1 border-zinc-300 dark:border-zinc-700"
+                            >
+                                Batal
+                            </Button>
+                            <Button
+                                onClick={addFrozenToCart}
+                                disabled={!selectedProductId}
+                                className="h-11 flex-1 bg-emerald-600 font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                            >
+                                Tambah ke Keranjang
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
                 {/* Flexible Ingredient Picker */}
                 <Dialog open={flexibleOpen} onOpenChange={setFlexibleOpen}>
                     <DialogContent className="gap-0 overflow-hidden rounded-2xl border-zinc-200 p-0 sm:max-w-md dark:border-zinc-800">
@@ -730,31 +1036,33 @@ export default function PosPage({
                             </DialogDescription>
                         </DialogHeader>
                         <div className="max-h-[60vh] flex-1 space-y-4 overflow-y-auto p-6">
-                            {allProducts.map((p) => {
-                                const existing = flexItems.find(
-                                    (f) => f.product_id === p.id,
-                                );
-                                const qty = existing?.quantity ?? 0;
-                                const stock = getStock(p.id);
-                                const inCart = cart.reduce((sum, c) => {
-                                    const cDetail = c.details.find(
-                                        (d) => d.product_id === p.id,
+                            {allProducts
+                                .filter((p) => !selectedMenu || p.category_id === selectedMenu.category_id)
+                                .map((p) => {
+                                    const existing = flexItems.find(
+                                        (f) => f.product_id === p.id,
                                     );
-                                    return (
-                                        sum +
-                                        (cDetail
-                                            ? cDetail.quantity * c.quantity
-                                            : 0)
-                                    );
-                                }, 0);
-                                const isDepleted =
-                                    stock - inCart <= 0 && qty === 0;
+                                    const qty = existing?.quantity ?? 0;
+                                    const stock = getStock(p.id);
+                                    const inCart = cart.reduce((sum, c) => {
+                                        const cDetail = c.details.find(
+                                            (d) => d.product_id === p.id,
+                                        );
+                                        return (
+                                            sum +
+                                            (cDetail
+                                                ? cDetail.quantity * c.quantity
+                                                : 0)
+                                        );
+                                    }, 0);
+                                    const isDepleted =
+                                        stock - inCart <= 0 && qty === 0;
 
-                                return (
-                                    <div
-                                        key={p.id}
-                                        className={`flex items-center justify-between rounded-xl border p-3 ${qty > 0 ? 'border-zinc-400 bg-zinc-50 dark:border-zinc-500 dark:bg-zinc-800/50' : 'border-zinc-200 dark:border-zinc-800'} transition-colors ${isDepleted ? 'opacity-50 grayscale' : ''}`}
-                                    >
+                                    return (
+                                        <div
+                                            key={p.id}
+                                            className={`flex items-center justify-between rounded-xl border p-3 ${qty > 0 ? 'border-zinc-400 bg-zinc-50 dark:border-zinc-500 dark:bg-zinc-800/50' : 'border-zinc-200 dark:border-zinc-800'} transition-colors ${isDepleted ? 'opacity-50 grayscale' : ''}`}
+                                        >
                                         <div>
                                             <div className="font-medium">
                                                 {p.name}
@@ -917,6 +1225,30 @@ export default function PosPage({
                                 <span className="text-2xl font-bold tracking-tight">
                                     {fmt(total)}
                                 </span>
+                            </div>
+
+                            <div className="space-y-3">
+                                <Label className="font-medium text-zinc-500">
+                                    Jenis Order
+                                </Label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {[
+                                        { id: 'dine_in', label: 'Dine In' },
+                                        { id: 'take_away', label: 'Take Away' },
+                                        { id: 'gofood', label: 'GoFood' },
+                                        { id: 'grabfood', label: 'GrabFood' },
+                                        { id: 'shopeefood', label: 'ShopeeFood' },
+                                    ].map((jo) => (
+                                        <button
+                                            key={jo.id}
+                                            type="button"
+                                            onClick={() => setJenisOrder(jo.id as any)}
+                                            className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${jenisOrder === jo.id ? 'border-zinc-900 bg-zinc-50 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-100' : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700'}`}
+                                        >
+                                            {jo.label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="space-y-3">

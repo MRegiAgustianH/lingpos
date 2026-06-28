@@ -55,6 +55,7 @@ export function AppSidebar() {
             items: [
                 { title: 'Riwayat Transaksi', href: '/transactions' },
                 { title: 'Arus Kas', href: '/cash-flows' },
+                { title: 'Riwayat Shift', href: '/admin/shifts' },
             ],
         },
     ];
@@ -65,7 +66,7 @@ export function AppSidebar() {
             href: '#',
             icon: (props) => <BoxIcon name="bx-cart" {...props} />,
             items: [
-                { title: 'Input Stok Harian', href: '/daily-restock' },
+                { title: 'Sesi Shift', href: '/cashier/session' },
                 { title: 'POS Kasir', href: '/pos' },
             ],
         },

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // === 1. Cabang ===
+        $gudang = Branch::create(['name' => 'Gudang (Pusat Stock)', 'address' => 'Kawasan Pergudangan No. 5', 'phone' => '08111111111']);
         $cabangPusat = Branch::create(['name' => 'Cabang Pusat', 'address' => 'Jl. Utama No. 1', 'phone' => '08123456789']);
         $cabangJakarta = Branch::create(['name' => 'Cabang Jakarta', 'address' => 'Jl. Jakarta No. 10', 'phone' => '08198765432']);
 
@@ -38,16 +39,18 @@ class DatabaseSeeder extends Seeder
             'email' => 'kasir@posling.com',
             'password' => 'password',
             'role' => 'kasir',
-            'branch_id' => $cabangJakarta->id,
+            'branch_id' => null, // Kasir Ani starts with no branch assigned
         ]);
 
         // === 3. Kategori ===
         $katDimsum = Category::create(['name' => 'Dimsum']);
         $katMinuman = Category::create(['name' => 'Minuman']);
+        $katPendukung = Category::create(['name' => 'Bahan Pendukung']);
 
         // === 4. Satuan ===
         $pcs = Unit::create(['name' => 'pcs']);
         $pack = Unit::create(['name' => 'pack']);
+        $botol = Unit::create(['name' => 'botol']);
         Unit::create(['name' => 'box']);
         Unit::create(['name' => 'lusin']);
 
@@ -92,6 +95,22 @@ class DatabaseSeeder extends Seeder
             'base_unit_id' => $pcs->id,
         ]);
 
+        $saus = Product::create([
+            'name' => 'Saus Sambal Botol',
+            'price' => 12000,
+            'sku' => 'BP001',
+            'category_id' => $katPendukung->id,
+            'base_unit_id' => $botol->id,
+        ]);
+
+        $boxMentai = Product::create([
+            'name' => 'Box Mentai',
+            'price' => 1500,
+            'sku' => 'BP002',
+            'category_id' => $katPendukung->id,
+            'base_unit_id' => $pcs->id,
+        ]);
+
         // Konversi: 1 pack = 50 pcs
         foreach ([$sosis, $kepiting, $keju, $ayam, $udang] as $product) {
             ProductUnit::create([
@@ -101,13 +120,39 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
+        // Konversi: 1 pack saus = 10 botol
+        ProductUnit::create([
+            'product_id' => $saus->id,
+            'unit_id' => $pack->id,
+            'conversion_value' => 10,
+        ]);
+
+        // Konversi: 1 pack box = 50 pcs
+        ProductUnit::create([
+            'product_id' => $boxMentai->id,
+            'unit_id' => $pack->id,
+            'conversion_value' => 50,
+        ]);
+
         // === 6. Inventory (stok per cabang) ===
+        // Gudang starts with large stocks
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $sosis->id, 'stock' => 1000]);
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $kepiting->id, 'stock' => 1000]);
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $keju->id, 'stock' => 1000]);
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $ayam->id, 'stock' => 1000]);
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $udang->id, 'stock' => 1000]);
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $saus->id, 'stock' => 100]);
+        Inventory::create(['branch_id' => $gudang->id, 'product_id' => $boxMentai->id, 'stock' => 500]);
+
+        // Branch-cabang start with 0 stock (stok ditarik dari Gudang saat buka shift)
         foreach ([$cabangPusat, $cabangJakarta] as $branch) {
-            Inventory::create(['branch_id' => $branch->id, 'product_id' => $sosis->id, 'stock' => 50]);
-            Inventory::create(['branch_id' => $branch->id, 'product_id' => $kepiting->id, 'stock' => 40]);
-            Inventory::create(['branch_id' => $branch->id, 'product_id' => $keju->id, 'stock' => 35]);
-            Inventory::create(['branch_id' => $branch->id, 'product_id' => $ayam->id, 'stock' => 30]);
-            Inventory::create(['branch_id' => $branch->id, 'product_id' => $udang->id, 'stock' => 25]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $sosis->id, 'stock' => 0]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $kepiting->id, 'stock' => 0]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $keju->id, 'stock' => 0]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $ayam->id, 'stock' => 0]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $udang->id, 'stock' => 0]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $saus->id, 'stock' => 0]);
+            Inventory::create(['branch_id' => $branch->id, 'product_id' => $boxMentai->id, 'stock' => 0]);
         }
 
         // === 7. Menu (yang dijual di POS) ===

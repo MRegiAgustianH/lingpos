@@ -1,6 +1,9 @@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
+import React, { useEffect, useState } from 'react';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -21,8 +24,8 @@ interface LowStockItem {
 }
 
 interface WeeklySale {
-    date: string;
-    total: number;
+    x: string;
+    y: number[];
 }
 
 interface TransactionItem {
@@ -46,6 +49,10 @@ interface Props {
     activeInventory: number;
     recentTransactions: TransactionItem[];
     isAdmin: boolean;
+    filters?: {
+        start_date: string;
+        end_date: string;
+    };
 }
 
 export default function Dashboard({
@@ -59,7 +66,54 @@ export default function Dashboard({
     activeInventory,
     recentTransactions,
     isAdmin,
+    filters = { start_date: '', end_date: '' },
 }: Props) {
+    const [startDate, setStartDate] = useState(filters.start_date || '');
+    const [endDate, setEndDate] = useState(filters.end_date || '');
+    const [Chart, setChart] = useState<any>(null);
+    const [isDark, setIsDark] = useState(false);
+
+    useEffect(() => {
+        setStartDate(filters.start_date || '');
+        setEndDate(filters.end_date || '');
+    }, [filters.start_date, filters.end_date]);
+
+    useEffect(() => {
+        import('react-apexcharts').then((mod) => {
+            setChart(() => mod.default);
+        });
+    }, []);
+
+    useEffect(() => {
+        const checkDark = () => {
+            setIsDark(document.documentElement.classList.contains('dark'));
+        };
+        checkDark();
+        const observer = new MutationObserver(checkDark);
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class'],
+        });
+        return () => observer.disconnect();
+    }, []);
+
+    const handleDateChange = (type: 'start' | 'end', value: string) => {
+        let newStart = startDate;
+        let newEnd = endDate;
+        if (type === 'start') {
+            newStart = value;
+            setStartDate(value);
+        } else {
+            newEnd = value;
+            setEndDate(value);
+        }
+        router.get(
+            '/dashboard',
+            { start_date: newStart, end_date: newEnd },
+            { preserveState: true, preserveScroll: true }
+        );
+    };
+
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('id-ID', {
             style: 'currency',
@@ -70,7 +124,74 @@ export default function Dashboard({
             .replace('Rp', 'Rp ');
     };
 
-    const maxSale = Math.max(...weeklySales.map((s) => Number(s.total)), 1);
+    const chartSeries = [
+        {
+            data: weeklySales.map((sale) => ({
+                x: new Date(sale.x).getTime(),
+                y: sale.y,
+            })),
+        },
+    ];
+
+    const chartOptions = {
+        chart: {
+            type: 'candlestick' as const,
+            height: 320,
+            toolbar: {
+                show: false,
+            },
+            background: 'transparent',
+        },
+        theme: {
+            mode: (isDark ? 'dark' : 'light') as const,
+        },
+        xaxis: {
+            type: 'datetime' as const,
+            labels: {
+                style: {
+                    colors: isDark ? '#a1a1aa' : '#71717a',
+                    fontFamily: 'Inter, sans-serif',
+                },
+            },
+        },
+        yaxis: {
+            tooltip: {
+                enabled: true,
+            },
+            labels: {
+                formatter: (val: number) => {
+                    return new Intl.NumberFormat('id-ID', {
+                        style: 'currency',
+                        currency: 'IDR',
+                        minimumFractionDigits: 0,
+                    })
+                        .format(val)
+                        .replace('Rp', 'Rp ');
+                },
+                style: {
+                    colors: isDark ? '#a1a1aa' : '#71717a',
+                    fontFamily: 'Inter, sans-serif',
+                },
+            },
+        },
+        plotOptions: {
+            candlestick: {
+                colors: {
+                    upward: '#10b981', // emerald-500
+                    downward: '#ef4444', // red-500
+                },
+                wick: {
+                    useFillColor: true,
+                },
+            },
+        },
+        grid: {
+            borderColor: isDark ? '#27272a' : '#e4e4e7',
+        },
+        tooltip: {
+            theme: isDark ? 'dark' : 'light',
+        },
+    };
 
     if (isAdmin) {
         return (
@@ -84,7 +205,7 @@ export default function Dashboard({
                 </Head>
 
                 <div className="flex flex-1 flex-col gap-6 p-6">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h1 className="text-2xl font-bold tracking-tight">
                                 Ringkasan
@@ -92,6 +213,26 @@ export default function Dashboard({
                             <p className="mt-1 text-sm text-muted-foreground">
                                 Berikut adalah ringkasan penjualan hari ini.
                             </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium text-muted-foreground">Dari</span>
+                                <Input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => handleDateChange('start', e.target.value)}
+                                    className="w-40 border-sidebar-border bg-card text-foreground"
+                                />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium text-muted-foreground">Sampai</span>
+                                <Input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => handleDateChange('end', e.target.value)}
+                                    className="w-40 border-sidebar-border bg-card text-foreground"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -202,118 +343,37 @@ export default function Dashboard({
                     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                         {/* Weekly Sales Chart */}
                         <div className="col-span-1 flex flex-col rounded-xl border border-sidebar-border/70 bg-card p-6 shadow-sm lg:col-span-2 dark:border-sidebar-border">
-                            <div className="mb-8 flex items-center justify-between">
+                            <div className="mb-4 flex items-center justify-between">
                                 <div>
                                     <h3 className="text-lg font-bold">
-                                            Tren Pendapatan
+                                        Tren Kecepatan Penjualan (OHLC)
                                     </h3>
                                     <p className="text-sm text-muted-foreground">
-                                        Performa penjualan selama 7 hari terakhir
+                                        Performa penjualan harian berdasarkan jam operasional harian
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="relative mt-auto h-64 w-full">
-                                {/* Y-Axis Grid Lines */}
-                                <div className="absolute inset-0 flex flex-col justify-between text-xs text-muted-foreground">
-                                    <div className="flex w-full items-center gap-4">
-                                        <span className="w-12 text-right">
-                                            {formatCurrency(
-                                                maxSale * 1,
-                                            ).replace('Rp', '')}
-                                        </span>
-                                        <div className="h-px w-full border-b border-dashed border-border/60"></div>
+                            <div className="mt-auto h-80 w-full">
+                                {Chart && weeklySales && weeklySales.length > 0 ? (
+                                    <Chart
+                                        options={chartOptions}
+                                        series={chartSeries}
+                                        type="candlestick"
+                                        height={320}
+                                    />
+                                ) : !Chart ? (
+                                    <div className="flex h-full w-full flex-col gap-3 justify-center">
+                                        <Skeleton className="h-6 w-full" />
+                                        <Skeleton className="h-64 w-full" />
                                     </div>
-                                    <div className="flex w-full items-center gap-4">
-                                        <span className="w-12 text-right">
-                                            {formatCurrency(
-                                                maxSale * 0.75,
-                                            ).replace('Rp', '')}
-                                        </span>
-                                        <div className="h-px w-full border-b border-dashed border-border/60"></div>
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center">
+                                        <p className="text-sm text-muted-foreground">
+                                            Tidak ada data transaksi untuk periode ini.
+                                        </p>
                                     </div>
-                                    <div className="flex w-full items-center gap-4">
-                                        <span className="w-12 text-right">
-                                            {formatCurrency(
-                                                maxSale * 0.5,
-                                            ).replace('Rp', '')}
-                                        </span>
-                                        <div className="h-px w-full border-b border-dashed border-border/60"></div>
-                                    </div>
-                                    <div className="flex w-full items-center gap-4">
-                                        <span className="w-12 text-right">
-                                            {formatCurrency(
-                                                maxSale * 0.25,
-                                            ).replace('Rp', '')}
-                                        </span>
-                                        <div className="h-px w-full border-b border-dashed border-border/60"></div>
-                                    </div>
-                                    <div className="flex w-full items-center gap-4">
-                                        <span className="w-12 text-right">
-                                            0
-                                        </span>
-                                        <div className="h-px w-full border-b border-dashed border-border/60"></div>
-                                    </div>
-                                </div>
-
-                                {/* Bars */}
-                                <div className="absolute inset-0 ml-16 flex items-end justify-around px-4 pt-6 pb-0">
-                                    {weeklySales && weeklySales.length > 0 ? (
-                                        weeklySales.map((sale) => {
-                                            const heightPercent =
-                                                maxSale > 0
-                                                    ? (Number(sale.total) /
-                                                          maxSale) *
-                                                      100
-                                                    : 0;
-                                            const minDisplay = Math.max(
-                                                heightPercent,
-                                                5,
-                                            ); // Ensure tiny bars are still visible
-
-                                            return (
-                                                <div
-                                                    key={sale.date}
-                                                    className="group relative flex h-full grow flex-col items-center justify-end gap-2"
-                                                >
-                                                    {/* Tooltip */}
-                                                    <div className="pointer-events-none absolute -top-10 z-10 rounded bg-foreground px-2 py-1 text-xs font-medium whitespace-nowrap text-background opacity-0 shadow-md transition-opacity group-hover:opacity-100">
-                                                        {formatCurrency(
-                                                            Number(sale.total),
-                                                        )}
-                                                    </div>
-
-                                                    {/* Bar */}
-                                                    <div
-                                                        className="w-12 rounded-t-lg bg-gray-500 shadow-sm transition-all duration-300 hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-500"
-                                                        style={{
-                                                            height: `${minDisplay}%`,
-                                                        }}
-                                                    ></div>
-
-                                                    {/* X-Axis Label */}
-                                                    <span className="absolute -bottom-6 text-xs font-medium text-muted-foreground">
-                                                        {new Date(
-                                                            sale.date,
-                                                        ).toLocaleDateString(
-                                                            'en-US',
-                                                            {
-                                                                weekday:
-                                                                    'short',
-                                                            },
-                                                        )}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="flex h-full w-full items-center justify-center">
-                                            <p className="text-sm text-muted-foreground">
-                                                No data available
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+                                )}
                             </div>
                         </div>
 
