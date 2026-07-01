@@ -23,8 +23,8 @@ class DatabaseSeeder extends Seeder
     {
         // === 1. Cabang ===
         $gudang = Branch::create(['name' => 'Gudang (Pusat Stock)', 'address' => 'Kawasan Pergudangan No. 5', 'phone' => '08111111111']);
-        $cabangPusat = Branch::create(['name' => 'Cabang Pusat', 'address' => 'Jl. Utama No. 1', 'phone' => '08123456789']);
-        $cabangJakarta = Branch::create(['name' => 'Cabang Jakarta', 'address' => 'Jl. Jakarta No. 10', 'phone' => '08198765432']);
+        $cabangPusat = Branch::create(['name' => 'Cabang Dapet', 'address' => 'Jl. Utama No. 1', 'phone' => '08123456789']);
+        $cabangJakarta = Branch::create(['name' => 'Cabang MY', 'address' => 'Jl. Jakarta No. 10', 'phone' => '08198765432']);
 
         // === 2. Admin & Kasir ===
         User::create([
